@@ -141,17 +141,28 @@ label file is a reviewed negative.
 
 ### Known limitations and current inventory
 
-- Current reliable dataset images: **0**.
+- Dataset capture session `gameplay_20261004_1702_main_01` collected **30**
+  real gameplay images on 2026-10-04. The session is assigned wholly to
+  `train`; collection used a 1536x864 region, 30 FPS capture cap, 2-second
+  sampling interval, and a 30-sample limit. All 30 sample opportunities were
+  saved; none were skipped by the optional similarity filter.
+- Video session `gameplay_video_20261004_01` imported **398** frames from
+  `Dead as Disco.mp4` on 2026-10-04. The 200.633-second source is 1918x1078 at
+  30 FPS with 6,019 frames. It was sampled every 0.5 seconds; 402 sample
+  opportunities were evaluated and 4 near-duplicates were skipped. The whole
+  video session is assigned to `train`.
+- Current dataset total: **428 images** (train **428**, validation **0**, test
+  **0**). All **428** images are unlabeled and none have generated labels.
+- Current manually verified object counts: **0** for each class (`player`,
+  `enemy`, `stunned_enemy`, `airborne_enemy`, `action_prompt`, and
+  `takedown_indicator`). There are **0** multi-class labeled images, **0**
+  reviewed empty images, **0** exact duplicate images, **0** invalid labels,
+  and no reported session split leakage. Dataset validation completed with no
+  errors; missing-label warnings are expected until manual review.
 - Existing `recordings/validation/live_capture.png` is one real gameplay
   sample used for vision verification; it is outside the training dataset and
   has no manual labels.
-- No dataset capture was started during this phase because the game was not
-  already in the foreground; the recorder will not activate it.
-- Manually labeled frames: **0**.
-- Frames per class: **0 for every class**; no class labels exist yet.
-- Dataset split counts: **train 0 / validation 0 / test 0**.
-- The sole existing gameplay frame has a clipped action prompt and cannot
-  provide varied examples.
-- No recorder-generated session has been collected yet. Dataset readiness
-  requires varied real gameplay frames and manual labels; no training is
-  justified at this stage.
+- Both dataset sessions require manual inspection and labeling. The video
+  frame set is ready for labeling, not model training; validation/test
+  sessions and manually verified labels are still required before a training
+  readiness decision.

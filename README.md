@@ -174,6 +174,41 @@ the append-only JSONL manifest under `data/dataset/metadata`, and session
 records under `data/sessions`. No automatic vision detections are turned into
 labels. A missing `.txt` means the image has not been manually reviewed yet.
 
+### Import a gameplay video
+
+Import a local recording without launching, focusing, or interacting with the
+game or any other application. The default sampling interval is 0.5 seconds
+(about 2 frames/second); the default upper bound is 1000 sample opportunities.
+For a roughly 3:20 recording, 2 FPS is a useful starting point. Every source
+video is one session assigned wholly to one split. Choose a unique session ID
+and a split explicitly to keep the video sequence together and control split
+placement:
+
+```powershell
+python -m app.main --video-dataset-capture "D:\games\PlayDeadAsDiscoAi\Dead as Disco.mp4" --video-sample-interval 0.5 --video-max-frames 1000 --dataset-session gameplay_video_20261004_01 --dataset-split train --dataset-dir data/dataset
+```
+
+Use `--dataset-split val` or `test` when that entire video should be held out.
+`auto` assigns the whole session by its ID hash, but the result is only
+approximately balanced across many sessions. `--deduplicate` optionally
+filters samples visually similar to the last saved frame; the threshold is
+controlled by `--similarity-threshold` (default `2`). The maximum counts
+sample opportunities, including deduplication skips.
+
+Extracted PNGs go under `images/<split>`, with per-frame source-video path,
+1-based source frame number, source-time offset, source FPS/resolution,
+session ID, split, and extraction timestamp in JSON sidecars and
+`metadata/manifest.jsonl`. No labels are generated. Validate the complete
+dataset after extraction:
+
+```powershell
+python -m app.main --dataset-validate data/dataset
+```
+
+Every video-derived image must still be manually reviewed and labeled using
+the YOLO guidance below; importing frames does not make them labeled training
+data.
+
 ### Candidate object classes
 
 The class IDs are fixed in [data/dataset/dataset.yaml](data/dataset/dataset.yaml):
@@ -195,19 +230,53 @@ classes in this initial list.
 
 ### Manual labeling and YOLO format
 
-Open each saved image in a manual bounding-box labeling tool configured with
-the six classes above. Export one YOLO detection `.txt` file beside each image
-in the matching `labels/{split}` directory, with the same basename. Each
-non-empty line is:
+Start the local manual labeler for every split:
 
-```text
-class_id x_center y_center width height
+```powershell
+python -m app.main --dataset-labeler --dataset-dir data/dataset
 ```
 
-Coordinates are normalized to the image dimensions, in `[0,1]`; width and
-height must be positive and the full box must fit the image. Empty label files
-are valid for reviewed frames containing none of these classes. Do not use the
-player color heuristic as ground truth.
+Filter to one split:
+
+```powershell
+python -m app.main --dataset-labeler --dataset-dir data/dataset --labeler-split train
+```
+
+Filter to one complete capture session (optionally combined with a split):
+
+```powershell
+python -m app.main --dataset-labeler --dataset-dir data/dataset --labeler-session gameplay_video_20261004_01
+python -m app.main --dataset-labeler --dataset-dir data/dataset --labeler-split train --labeler-session gameplay_20261004_1702_main_01
+```
+
+Choose a class with the radio buttons, then left-click-drag a tight box around
+each visible object. Use the box list plus **Delete selected box** or the
+keyboard Delete key to remove one; **Clear boxes** removes the current
+in-memory boxes. **Save** writes normalized YOLO annotations. Saving over an
+existing annotation asks for confirmation; rejecting the prompt leaves the
+file unchanged. **Mark reviewed** saves labels or an empty label file for a
+manually confirmed frame with no target objects. **Skip image** records a
+separate skip status and advances without creating or changing annotations.
+Previous/Next (or Left/Right arrow) navigate images. The progress panel shows
+reviewed, labeled, skipped, and remaining counts for the current filters.
+
+Labels are saved as `class_id x_center y_center width height` in normalized
+image coordinates under `labels/<split>`; a saved empty file represents a
+reviewed negative image. Review and skip progress is kept in
+`data/dataset/metadata/labeling_state.json`, separate from capture metadata.
+The tool loads existing label files when opening an image and does not infer
+boxes. Every box must be manually drawn and verified; never use vision
+heuristics as ground truth.
+
+Print labeling progress and per-class object counts without opening the UI:
+
+```powershell
+python -m app.main --dataset-label-report --dataset-dir data/dataset
+```
+
+The JSON report includes images reviewed, images with labels, reviewed images
+without target objects, skipped and remaining images, class counts, and total
+bounding boxes.
 
 Split by **whole session/continuous sequence**, targeting approximately 70%
 train, 20% validation, and 10% test. Avoid putting near-identical neighboring

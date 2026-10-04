@@ -45,6 +45,68 @@ session to one split; never distribute adjacent frames from one sequence
 across train, validation, and test. The 70/20/10 target is approximate and
 must not override session boundaries.
 
+## Video-derived frames
+
+Video import samples a local recording at a configurable interval (default
+0.5 seconds/about 2 FPS) and stores every selected frame as an unlabeled image.
+The complete input video is one session and must remain in one split. Use a
+unique session ID and explicitly choose `train`, `val`, or `test` when split
+placement matters. Frame JSON sidecars and the dataset manifest record source
+video, source frame number, source-time offset, source FPS and resolution,
+session ID, and split.
+
+Video extraction never creates YOLO labels. Manually inspect each extracted
+frame and annotate only objects actually visible in that frame. Missing label
+files remain unreviewed; create an empty label file only after manually
+confirming that a frame contains none of the target classes. Do not treat
+video-derived frames or heuristic detections as ground truth.
+
+## Local manual labeling tool
+
+From the project root, open the labeler for the complete dataset:
+
+```powershell
+python -m app.main --dataset-labeler --dataset-dir data/dataset
+```
+
+Optional filters select one split or one capture session:
+
+```powershell
+python -m app.main --dataset-labeler --dataset-dir data/dataset --labeler-split train
+python -m app.main --dataset-labeler --dataset-dir data/dataset --labeler-session gameplay_video_20261004_01
+python -m app.main --dataset-labeler --dataset-dir data/dataset --labeler-split train --labeler-session gameplay_20261004_1702_main_01
+```
+
+Select a class with its radio button and draw boxes by left-clicking and
+dragging on the displayed image. The image is scaled to fit; saved coordinates
+are converted back to original image dimensions. Select a listed box and press
+Delete or use **Delete selected box** to remove it. **Clear boxes** clears the
+current in-memory annotations. **Previous**/**Next** buttons or Left/Right
+arrow keys navigate.
+
+- **Save** writes a YOLO label file and marks the image reviewed. If a label
+  file already exists, the tool asks before replacing it; cancel to preserve
+  the existing annotation.
+- **Mark reviewed** saves the current boxes, including an empty file for a
+  manually confirmed image with no target objects. Existing unchanged
+  annotations are left untouched.
+- **Skip image** records a skip in `metadata/labeling_state.json` and advances
+  without creating or changing a label file.
+
+Existing label files are loaded when opening an image. Session and split
+assignment are read from the image folder/name and are not changed by
+annotation. Review/skip progress is stored separately from capture metadata.
+No automatic detections or labels are created.
+
+Print the labeling report and class counts:
+
+```powershell
+python -m app.main --dataset-label-report --dataset-dir data/dataset
+```
+
+The report includes total/reviewed/labeled/empty/skipped/remaining image
+counts, per-class box counts, and total bounding boxes.
+
 ## YOLO detection label format
 
 Create one UTF-8 `.txt` beside each labeled image using the same basename:

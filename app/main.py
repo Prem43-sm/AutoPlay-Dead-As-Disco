@@ -9,11 +9,14 @@ from app.logger import get_logger
 from capture.screen_capture import run_live_capture
 from data.dataset_tools import (
     DatasetCaptureConfig,
+    VideoDatasetCaptureConfig,
     create_dataset_structure,
+    extract_video_dataset_session,
     record_dataset_session,
     render_dataset_preview,
     validate_dataset,
 )
+from data.dataset_labeler import build_labeling_report, run_dataset_labeler
 from vision.state_estimator import (
     draw_debug_frame,
     estimate_game_state,
@@ -125,6 +128,12 @@ def _parse_args() -> argparse.Namespace:
         help="Record a bounded, read-only gameplay dataset session.",
     )
     parser.add_argument(
+        "--video-dataset-capture",
+        type=Path,
+        metavar="VIDEO",
+        help="Extract bounded frames from a video file into the dataset.",
+    )
+    parser.add_argument(
         "--dataset-dir",
         type=Path,
         default=Path("data/dataset"),
@@ -151,6 +160,18 @@ def _parse_args() -> argparse.Namespace:
         type=int,
         default=100,
         help="Maximum sampled frames per session, including dedup skips (default: 100).",
+    )
+    parser.add_argument(
+        "--video-sample-interval",
+        type=float,
+        default=0.5,
+        help="Seconds between video samples (default: 0.5, approximately 2 FPS).",
+    )
+    parser.add_argument(
+        "--video-max-frames",
+        type=int,
+        default=1000,
+        help="Maximum video sample opportunities, including dedup skips (default: 1000).",
     )
     parser.add_argument(
         "--deduplicate",
@@ -180,6 +201,26 @@ def _parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional YOLO label file for --dataset-preview.",
     )
+    parser.add_argument(
+        "--dataset-labeler",
+        action="store_true",
+        help="Open the local manual bounding-box labeling tool.",
+    )
+    parser.add_argument(
+        "--labeler-split",
+        choices=("all", "train", "val", "test"),
+        default="all",
+        help="Filter images shown by --dataset-labeler (default: all).",
+    )
+    parser.add_argument(
+        "--labeler-session",
+        help="Filter --dataset-labeler to one capture session ID.",
+    )
+    parser.add_argument(
+        "--dataset-label-report",
+        action="store_true",
+        help="Print manual-labeling progress and per-class counts as JSON.",
+    )
     return parser.parse_args()
 
 
@@ -188,13 +229,21 @@ def main() -> None:
     dataset_operations = (
         args.dataset_init is not None,
         args.dataset_capture,
+        args.video_dataset_capture is not None,
         args.dataset_validate is not None,
         args.dataset_preview is not None,
+        args.dataset_labeler,
+        args.dataset_label_report,
     )
     if sum(dataset_operations) > 1:
         raise SystemExit("Choose only one dataset operation per command.")
     if args.dataset_label is not None and args.dataset_preview is None:
         raise SystemExit("--dataset-label requires --dataset-preview.")
+    if (
+        (args.labeler_split != "all" or args.labeler_session is not None)
+        and not args.dataset_labeler
+    ):
+        raise SystemExit("--labeler-split and --labeler-session require --dataset-labeler.")
     if args.dataset_init is not None:
         create_dataset_structure(args.dataset_init)
         print(f"Dataset structure ready: {args.dataset_init}")
@@ -226,6 +275,18 @@ def main() -> None:
             cv2.destroyAllWindows()
         return
 
+    if args.dataset_label_report:
+        print(json.dumps(build_labeling_report(args.dataset_dir), indent=2))
+        return
+
+    if args.dataset_labeler:
+        run_dataset_labeler(
+            args.dataset_dir,
+            split=args.labeler_split,
+            session_id=args.labeler_session,
+        )
+        return
+
     if args.dataset_capture:
         dataset_config = DatasetCaptureConfig(
             capture=CaptureConfig(
@@ -249,6 +310,39 @@ def main() -> None:
             "sampled_frames": report.sampled_frames,
             "saved_frames": report.saved_frames,
             "duplicate_frames_skipped": report.duplicate_frames_skipped,
+            "manifest_path": report.manifest_path.as_posix(),
+            "session_metadata_path": report.session_metadata_path.as_posix(),
+        }, indent=2))
+        return
+
+    if args.video_dataset_capture is not None:
+        video_config = VideoDatasetCaptureConfig(
+            video_path=args.video_dataset_capture,
+            sample_interval=args.video_sample_interval,
+            max_frames=args.video_max_frames,
+            output_dir=args.dataset_dir,
+            session_id=args.dataset_session,
+            split=None if args.dataset_split == "auto" else args.dataset_split,
+            deduplicate=args.deduplicate,
+            similarity_threshold=args.similarity_threshold,
+        )
+        report = extract_video_dataset_session(video_config)
+        print(json.dumps({
+            "session_id": report.session_id,
+            "split": report.split,
+            "source_video": report.video_metadata.source_video,
+            "duration_seconds": report.video_metadata.duration_seconds,
+            "source_fps": report.video_metadata.source_fps,
+            "source_resolution": {
+                "width": report.video_metadata.width,
+                "height": report.video_metadata.height,
+            },
+            "total_source_frames": report.video_metadata.total_frames,
+            "source_frames_read": report.source_frames_read,
+            "sampled_frames": report.sampled_frames,
+            "saved_frames": report.saved_frames,
+            "duplicate_frames_skipped": report.duplicate_frames_skipped,
+            "labels_generated": False,
             "manifest_path": report.manifest_path.as_posix(),
             "session_metadata_path": report.session_metadata_path.as_posix(),
         }, indent=2))

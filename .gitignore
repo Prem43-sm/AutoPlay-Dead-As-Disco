@@ -13,6 +13,7 @@ env/
 
 # Local gameplay captures and generated vision previews are not distributed.
 recordings/
+/Dead as Disco.mp4
 
 # Keep dataset structure and instructions, but not generated images, labels,
 # metadata, or session captures.

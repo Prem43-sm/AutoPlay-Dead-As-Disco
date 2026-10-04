@@ -7,16 +7,30 @@ import cv2
 import numpy as np
 
 from app.config import CaptureConfig
+from data.dataset_labeler import (
+    build_labeling_report,
+    get_labeling_progress,
+    load_labeling_state,
+    pixel_box_to_yolo,
+    read_yolo_annotations,
+    save_labeling_state,
+    write_yolo_annotations,
+    yolo_to_pixel_box,
+)
 from data.dataset_tools import (
     CLASS_NAMES,
     DatasetCaptureConfig,
+    DatasetSplit,
+    VideoDatasetCaptureConfig,
     assign_session_split,
     create_dataset_structure,
     frame_difference,
     frame_filename,
+    extract_video_dataset_session,
     is_duplicate_frame,
     parse_yolo_labels,
     record_dataset_session,
+    read_video_metadata,
     render_dataset_preview,
     validate_dataset,
     validate_yolo_label,
@@ -52,6 +66,45 @@ class FakeCapture:
         frame = self._frames[min(self._index, len(self._frames) - 1)]
         self._index += 1
         return frame.copy()
+
+
+class FakeVideoCapture:
+    def __init__(
+        self,
+        frames: list[np.ndarray],
+        *,
+        fps: float = 2.0,
+        opened: bool = True,
+    ) -> None:
+        self._frames = frames
+        self._fps = fps
+        self._opened = opened
+        self._index = 0
+        self.released = False
+
+    def isOpened(self) -> bool:
+        return self._opened
+
+    def get(self, prop: int) -> float:
+        if prop == cv2.CAP_PROP_FPS:
+            return self._fps
+        if prop == cv2.CAP_PROP_FRAME_WIDTH:
+            return float(self._frames[0].shape[1]) if self._frames else 0.0
+        if prop == cv2.CAP_PROP_FRAME_HEIGHT:
+            return float(self._frames[0].shape[0]) if self._frames else 0.0
+        if prop == cv2.CAP_PROP_FRAME_COUNT:
+            return float(len(self._frames))
+        return 0.0
+
+    def read(self) -> tuple[bool, np.ndarray | None]:
+        if self._index >= len(self._frames):
+            return False, None
+        frame = self._frames[self._index].copy()
+        self._index += 1
+        return True, frame
+
+    def release(self) -> None:
+        self.released = True
 
 
 class DatasetStructureTests(unittest.TestCase):
@@ -172,6 +225,156 @@ class DatasetRecorderTests(unittest.TestCase):
             self.assertEqual(report.duplicate_frames_skipped, 2)
 
 
+class VideoDatasetCaptureTests(unittest.TestCase):
+    def _config(
+        self,
+        video_path: Path,
+        dataset_dir: Path,
+        *,
+        sample_interval: float = 1.0,
+        max_frames: int = 20,
+        session_id: str = "video-session",
+        split: DatasetSplit | None = "val",
+        deduplicate: bool = False,
+    ) -> VideoDatasetCaptureConfig:
+        return VideoDatasetCaptureConfig(
+            video_path=video_path,
+            sample_interval=sample_interval,
+            max_frames=max_frames,
+            output_dir=dataset_dir,
+            session_id=session_id,
+            split=split,
+            deduplicate=deduplicate,
+        )
+
+    def test_reads_video_metadata_and_releases_capture(self) -> None:
+        frames = [np.zeros((12, 16, 3), dtype=np.uint8) for _ in range(5)]
+        created: list[FakeVideoCapture] = []
+
+        def factory(_path: str) -> FakeVideoCapture:
+            capture = FakeVideoCapture(frames, fps=2.0)
+            created.append(capture)
+            return capture
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            video_path = Path(temporary_directory) / "sample.mp4"
+            video_path.write_bytes(b"fixture")
+            metadata = read_video_metadata(video_path, capture_factory=factory)
+
+        self.assertEqual(metadata.duration_seconds, 2.5)
+        self.assertEqual(metadata.source_fps, 2.0)
+        self.assertEqual((metadata.width, metadata.height), (16, 12))
+        self.assertEqual(metadata.total_frames, 5)
+        self.assertEqual(metadata.source_video, str(video_path.resolve()))
+        self.assertTrue(created[0].released)
+
+    def test_extracts_sampled_frames_with_source_metadata_and_split(self) -> None:
+        frames = [
+            np.full((12, 16, 3), value, dtype=np.uint8)
+            for value in (0, 0, 20, 20, 40)
+        ]
+
+        def factory(_path: str) -> FakeVideoCapture:
+            return FakeVideoCapture(frames, fps=2.0)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            video_path = root / "sample.mp4"
+            video_path.write_bytes(b"fixture")
+            dataset_dir = root / "dataset"
+            report = extract_video_dataset_session(
+                self._config(video_path, dataset_dir, sample_interval=1.0),
+                capture_factory=factory,
+            )
+            images = sorted((dataset_dir / "images" / "val").glob("*.png"))
+            rows = [
+                json.loads(line)
+                for line in report.manifest_path.read_text(encoding="utf-8").splitlines()
+            ]
+            session_metadata = json.loads(
+                report.session_metadata_path.read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(report.session_id, "video-session")
+        self.assertEqual(report.split, "val")
+        self.assertEqual(report.source_frames_read, 5)
+        self.assertEqual(report.sampled_frames, 3)
+        self.assertEqual(report.saved_frames, 3)
+        self.assertEqual(report.duplicate_frames_skipped, 0)
+        self.assertEqual(len(images), 3)
+        self.assertEqual(
+            [row["source_frame_number"] for row in rows],
+            [1, 3, 5],
+        )
+        self.assertEqual(
+            [row["source_timestamp_seconds"] for row in rows],
+            [0.0, 1.0, 2.0],
+        )
+        self.assertTrue(all(row["source_fps"] == 2.0 for row in rows))
+        self.assertTrue(all(row["source_resolution"] == {"width": 16, "height": 12} for row in rows))
+        self.assertTrue(all(row["dataset_session_id"] == "video-session" for row in rows))
+        self.assertTrue(all(row["split"] == "val" and not row["labeled"] for row in rows))
+        self.assertFalse(session_metadata["labels_generated"])
+
+    def test_video_extraction_is_bounded_and_deduplicates(self) -> None:
+        frames = [np.zeros((12, 16, 3), dtype=np.uint8) for _ in range(20)]
+
+        def factory(_path: str) -> FakeVideoCapture:
+            return FakeVideoCapture(frames, fps=2.0)
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            video_path = root / "sample.mp4"
+            video_path.write_bytes(b"fixture")
+            dataset_dir = root / "dataset"
+            report = extract_video_dataset_session(
+                self._config(
+                    video_path,
+                    dataset_dir,
+                    sample_interval=0.5,
+                    max_frames=3,
+                    deduplicate=True,
+                ),
+                capture_factory=factory,
+            )
+
+        self.assertEqual(report.source_frames_read, 3)
+        self.assertEqual(report.sampled_frames, 3)
+        self.assertEqual(report.saved_frames, 1)
+        self.assertEqual(report.duplicate_frames_skipped, 2)
+
+    def test_video_extraction_rejects_missing_or_unopenable_video(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            dataset_dir = root / "dataset"
+            missing_path = root / "missing.mp4"
+            with self.assertRaises(FileNotFoundError):
+                extract_video_dataset_session(
+                    self._config(missing_path, dataset_dir),
+                    capture_factory=lambda _path: self.fail("must not open missing video"),
+                )
+
+            invalid_path = root / "invalid.mp4"
+            invalid_path.write_bytes(b"invalid")
+            with self.assertRaisesRegex(ValueError, "Could not open"):
+                extract_video_dataset_session(
+                    self._config(invalid_path, dataset_dir),
+                    capture_factory=lambda _path: FakeVideoCapture([], opened=False),
+                )
+
+    def test_video_metadata_rejects_invalid_fps(self) -> None:
+        capture = FakeVideoCapture(
+            [np.zeros((12, 16, 3), dtype=np.uint8)],
+            fps=0.0,
+        )
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            video_path = Path(temporary_directory) / "sample.mp4"
+            video_path.write_bytes(b"fixture")
+            with self.assertRaisesRegex(ValueError, "invalid FPS"):
+                read_video_metadata(video_path, capture_factory=lambda _path: capture)
+        self.assertTrue(capture.released)
+
+
 class YoloLabelTests(unittest.TestCase):
     def test_parses_yolo_labels(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -200,6 +403,82 @@ class YoloLabelTests(unittest.TestCase):
         self.assertIn("unknown class", validate_yolo_label(YoloLabel(8, 0.5, 0.5, 0.2, 0.4), 100, 100, classes) or "")
         self.assertIn("outside image", validate_yolo_label(YoloLabel(0, 0.05, 0.5, 0.2, 0.4), 100, 100, classes) or "")
         self.assertIn("finite", validate_yolo_label(YoloLabel(0, float("nan"), 0.5, 0.2, 0.4), 100, 100, classes) or "")
+
+
+class ManualLabelerDataTests(unittest.TestCase):
+    def test_pixel_and_yolo_box_conversion_round_trips(self) -> None:
+        label = pixel_box_to_yolo(2, 100, 50, 500, 250, 1000, 500)
+        self.assertEqual((label.class_id, label.x_center, label.y_center), (2, 0.3, 0.3))
+        self.assertEqual((label.width, label.height), (0.4, 0.4))
+        self.assertEqual(
+            yolo_to_pixel_box(label, 1000, 500),
+            (100, 50, 500, 250),
+        )
+
+    def test_pixel_conversion_rejects_out_of_bounds_and_unknown_class(self) -> None:
+        with self.assertRaisesRegex(ValueError, "inside the image"):
+            pixel_box_to_yolo(0, -1, 0, 10, 10, 100, 100)
+        with self.assertRaisesRegex(ValueError, "Unknown class"):
+            pixel_box_to_yolo(9, 0, 0, 10, 10, 100, 100)
+
+    def test_annotation_read_write_and_explicit_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            label_path = Path(temporary_directory) / "frame.txt"
+            labels = [
+                pixel_box_to_yolo(0, 10, 20, 50, 80, 100, 100),
+                pixel_box_to_yolo(4, 60, 10, 90, 30, 100, 100),
+            ]
+            write_yolo_annotations(label_path, labels, 100, 100)
+            loaded = read_yolo_annotations(label_path, 100, 100)
+            self.assertEqual(loaded, labels)
+
+            with self.assertRaises(FileExistsError):
+                write_yolo_annotations(label_path, [], 100, 100)
+            write_yolo_annotations(
+                label_path, [], 100, 100, allow_overwrite=True
+            )
+            self.assertEqual(label_path.read_text(encoding="utf-8"), "")
+
+    def test_labeling_progress_and_report_track_reviewed_skipped_and_classes(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            dataset_dir = Path(temporary_directory) / "dataset"
+            create_dataset_structure(dataset_dir)
+            images = dataset_dir / "images" / "train"
+            labels_dir = dataset_dir / "labels" / "train"
+            image_labeled = images / "session_frame_000001_time.png"
+            image_empty = images / "session_frame_000002_time.png"
+            image_skipped = images / "session_frame_000003_time.png"
+            for image_path in (image_labeled, image_empty, image_skipped):
+                cv2.imwrite(
+                    str(image_path),
+                    np.zeros((100, 100, 3), dtype=np.uint8),
+                )
+            (labels_dir / f"{image_labeled.stem}.txt").write_text(
+                "0 0.5 0.5 0.4 0.6\n1 0.2 0.2 0.1 0.1\n",
+                encoding="utf-8",
+            )
+            (labels_dir / f"{image_empty.stem}.txt").write_text("", encoding="utf-8")
+            save_labeling_state(
+                dataset_dir,
+                {"images/train/session_frame_000003_time.png": "skipped"},
+            )
+
+            statuses = load_labeling_state(dataset_dir)
+            progress = get_labeling_progress(dataset_dir)
+            report = build_labeling_report(dataset_dir)
+
+        self.assertEqual(statuses["images/train/session_frame_000003_time.png"], "skipped")
+        self.assertEqual(progress.reviewed, 2)
+        self.assertEqual(progress.labeled, 1)
+        self.assertEqual(progress.skipped, 1)
+        self.assertEqual(progress.remaining, 0)
+        self.assertEqual(report["images_reviewed"], 2)
+        self.assertEqual(report["images_with_labels"], 1)
+        self.assertEqual(report["images_without_target_objects"], 1)
+        self.assertEqual(report["images_skipped"], 1)
+        self.assertEqual(report["total_bounding_boxes"], 2)
+        self.assertEqual(report["class_counts"]["player"], 1)
+        self.assertEqual(report["class_counts"]["enemy"], 1)
 
 
 class DatasetValidationAndPreviewTests(unittest.TestCase):

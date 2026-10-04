@@ -72,6 +72,56 @@ class DatasetCaptureReport:
 
 
 @dataclass(frozen=True)
+class VideoMetadata:
+    source_video: str
+    duration_seconds: float | None
+    source_fps: float
+    width: int
+    height: int
+    total_frames: int | None
+
+
+@dataclass(frozen=True)
+class VideoDatasetCaptureConfig:
+    video_path: Path
+    sample_interval: float
+    max_frames: int
+    output_dir: Path
+    session_id: str | None = None
+    split: DatasetSplit | None = None
+    deduplicate: bool = False
+    similarity_threshold: float = 2.0
+
+    def validate(self) -> None:
+        if not Path(self.video_path).is_file():
+            raise FileNotFoundError(f"Source video does not exist: {self.video_path}")
+        if not isfinite(self.sample_interval) or self.sample_interval <= 0:
+            raise ValueError("Video sample interval must be greater than zero.")
+        if self.max_frames < 1:
+            raise ValueError("Maximum extracted frames must be at least 1.")
+        if self.split is not None and self.split not in SPLITS:
+            raise ValueError(f"Split must be one of: {', '.join(SPLITS)}.")
+        if (
+            not np.isfinite(self.similarity_threshold)
+            or self.similarity_threshold < 0
+        ):
+            raise ValueError("Similarity threshold must be finite and non-negative.")
+
+
+@dataclass(frozen=True)
+class VideoDatasetCaptureReport:
+    session_id: str
+    split: DatasetSplit
+    video_metadata: VideoMetadata
+    source_frames_read: int
+    sampled_frames: int
+    saved_frames: int
+    duplicate_frames_skipped: int
+    manifest_path: Path
+    session_metadata_path: Path
+
+
+@dataclass(frozen=True)
 class YoloLabel:
     class_id: int
     x_center: float
@@ -352,6 +402,223 @@ def record_dataset_session(
             saved_count,
         )
         raise
+
+
+def read_video_metadata(
+    video_path: Path, *, capture_factory: Any = cv2.VideoCapture
+) -> VideoMetadata:
+    video_path = Path(video_path)
+    if not video_path.is_file():
+        raise FileNotFoundError(f"Source video does not exist: {video_path}")
+
+    capture = capture_factory(str(video_path))
+    try:
+        if not capture.isOpened():
+            raise ValueError(f"Could not open source video: {video_path}")
+        source_fps = float(capture.get(cv2.CAP_PROP_FPS))
+        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
+        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        frame_count_value = float(capture.get(cv2.CAP_PROP_FRAME_COUNT))
+        if not isfinite(source_fps) or source_fps <= 0:
+            raise ValueError(f"Source video has invalid FPS: {source_fps}")
+        if width <= 0 or height <= 0:
+            raise ValueError(
+                f"Source video has invalid resolution: {width}x{height}"
+            )
+        total_frames = (
+            int(frame_count_value)
+            if isfinite(frame_count_value) and frame_count_value > 0
+            else None
+        )
+        duration_seconds = (
+            total_frames / source_fps if total_frames is not None else None
+        )
+        return VideoMetadata(
+            source_video=str(video_path.resolve()),
+            duration_seconds=duration_seconds,
+            source_fps=source_fps,
+            width=width,
+            height=height,
+            total_frames=total_frames,
+        )
+    finally:
+        capture.release()
+
+
+def extract_video_dataset_session(
+    config: VideoDatasetCaptureConfig,
+    *,
+    capture_factory: Any = cv2.VideoCapture,
+) -> VideoDatasetCaptureReport:
+    config.validate()
+    video_metadata = read_video_metadata(
+        config.video_path, capture_factory=capture_factory
+    )
+    dataset_dir = Path(config.output_dir)
+    create_dataset_structure(dataset_dir)
+    logger = get_logger(__name__)
+    session_id = _normalize_session_id(
+        config.session_id
+        or datetime.now(timezone.utc).strftime("video_%Y%m%dT%H%M%S_%fZ")
+    )
+    split = config.split or assign_session_split(session_id)
+    image_dir = dataset_dir / "images" / split
+    metadata_dir = dataset_dir / "metadata" / session_id
+    session_metadata_path = metadata_dir / "session.json"
+    manifest_path = dataset_dir / "metadata" / "manifest.jsonl"
+    sessions_dir = dataset_dir.parent / "sessions"
+    metadata_dir.mkdir(parents=True, exist_ok=True)
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    session_record_path = sessions_dir / f"{session_id}.json"
+    if session_metadata_path.exists() or session_record_path.exists():
+        raise FileExistsError(f"Dataset session already exists: {session_id}")
+
+    capture = capture_factory(str(config.video_path))
+    if not capture.isOpened():
+        capture.release()
+        raise ValueError(f"Could not open source video: {config.video_path}")
+
+    logger.info(
+        "Importing video dataset session %s: source=%s, resolution=%dx%d, "
+        "source FPS=%.3f, duration=%s, split=%s, interval=%.3fs, max frames=%d.",
+        session_id,
+        video_metadata.source_video,
+        video_metadata.width,
+        video_metadata.height,
+        video_metadata.source_fps,
+        video_metadata.duration_seconds,
+        split,
+        config.sample_interval,
+        config.max_frames,
+    )
+    source_frames_read = 0
+    sampled_frames = 0
+    saved_frames = 0
+    duplicates_skipped = 0
+    previous_saved: Frame | None = None
+    next_sample_time = 0.0
+    try:
+        while sampled_frames < config.max_frames:
+            success, frame = capture.read()
+            if not success:
+                break
+            source_frames_read += 1
+            source_frame_number = source_frames_read
+            source_timestamp_seconds = (source_frame_number - 1) / video_metadata.source_fps
+            if source_timestamp_seconds + 1e-9 < next_sample_time:
+                continue
+
+            sampled_frames += 1
+            next_sample_time = sampled_frames * config.sample_interval
+            if config.deduplicate and is_duplicate_frame(
+                previous_saved, frame, config.similarity_threshold
+            ):
+                duplicates_skipped += 1
+                logger.info(
+                    "Skipped video sample %d (source frame %d, %.3fs) as visually "
+                    "similar (threshold %.3f).",
+                    sampled_frames,
+                    source_frame_number,
+                    source_timestamp_seconds,
+                    config.similarity_threshold,
+                )
+                continue
+
+            timestamp = datetime.now(timezone.utc)
+            filename = frame_filename(sampled_frames, timestamp)
+            image_path = image_dir / f"{session_id}_{filename}"
+            if not cv2.imwrite(str(image_path), frame):
+                raise OSError(f"Could not save extracted video frame: {image_path}")
+            dataset_metadata = {
+                "timestamp": timestamp.isoformat(),
+                "frame_number": sampled_frames,
+                "source_video": video_metadata.source_video,
+                "source_frame_number": source_frame_number,
+                "source_timestamp_seconds": source_timestamp_seconds,
+                "source_fps": video_metadata.source_fps,
+                "source_resolution": {
+                    "width": video_metadata.width,
+                    "height": video_metadata.height,
+                },
+                "frame_resolution": {
+                    "width": int(frame.shape[1]),
+                    "height": int(frame.shape[0]),
+                },
+                "dataset_session_id": session_id,
+                "source_session": session_id,
+                "split": split,
+                "image_path": image_path.relative_to(dataset_dir).as_posix(),
+                "labels": [],
+                "labeled": False,
+            }
+            frame_metadata_path = metadata_dir / f"{image_path.stem}.json"
+            frame_metadata_path.write_text(
+                json.dumps(dataset_metadata, indent=2) + "\n",
+                encoding="utf-8",
+            )
+            with manifest_path.open("a", encoding="utf-8", newline="\n") as manifest:
+                manifest.write(
+                    json.dumps(dataset_metadata, separators=(",", ":")) + "\n"
+                )
+            previous_saved = frame.copy()
+            saved_frames += 1
+            logger.info(
+                "Saved video dataset frame %d/%d from source frame %d at %.3fs: %s.",
+                saved_frames,
+                config.max_frames,
+                source_frame_number,
+                source_timestamp_seconds,
+                image_path,
+            )
+    except Exception:
+        logger.exception(
+            "Video dataset import failed for session %s after %d saved frames.",
+            session_id,
+            saved_frames,
+        )
+        raise
+    finally:
+        capture.release()
+
+    session_data = {
+        "session_id": session_id,
+        "session_type": "video",
+        "split": split,
+        "source_video": video_metadata.source_video,
+        "duration_seconds": video_metadata.duration_seconds,
+        "source_fps": video_metadata.source_fps,
+        "source_resolution": {
+            "width": video_metadata.width,
+            "height": video_metadata.height,
+        },
+        "total_source_frames": video_metadata.total_frames,
+        "source_frames_read": source_frames_read,
+        "sample_interval_seconds": config.sample_interval,
+        "max_frames": config.max_frames,
+        "sampled_frames": sampled_frames,
+        "saved_frames": saved_frames,
+        "duplicate_frames_skipped": duplicates_skipped,
+        "labels_generated": False,
+    }
+    session_metadata_path.write_text(
+        json.dumps(session_data, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    session_record_path.write_text(
+        json.dumps(session_data, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    return VideoDatasetCaptureReport(
+        session_id=session_id,
+        split=split,
+        video_metadata=video_metadata,
+        source_frames_read=source_frames_read,
+        sampled_frames=sampled_frames,
+        saved_frames=saved_frames,
+        duplicate_frames_skipped=duplicates_skipped,
+        manifest_path=manifest_path,
+        session_metadata_path=session_metadata_path,
+    )
 
 
 def parse_yolo_labels(label_path: Path) -> list[YoloLabel]:
