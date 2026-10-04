@@ -1,0 +1,821 @@
+DEAD AS DISCO — AI PLAYER
+ZERO → COMPLETE PLAYABLE SOFTWARE ROADMAP
+
+Project Goal
+------------
+Build a standalone AI game-player software that can automatically play
+Dead as Disco, analyze the game screen, make decisions, control the game,
+and optionally synchronize gameplay actions with the user's own music.
+
+Final concept:
+Your Music -> Music Analyzer -> AI Decision System
+Game Screen -> Vision System -> Game State -> AI Decision -> Controller
+Controller -> Dead as Disco -> Screen Capture -> AI loop
+
+
+PHASE 0 — PROJECT DEFINITION
+----------------------------
+Goal:
+Understand exactly what the AI needs to control.
+
+Tasks:
+- Install and analyze the game.
+- Determine game resolution, FPS, controls, game mode, camera behavior,
+  and keyboard/controller inputs.
+- Record gameplay videos.
+- Identify player, enemies, platforms, obstacles, weapons/actions,
+  death screen, score, and level completion.
+
+Deliverable:
+GAME_SPEC.md containing:
+- Controls
+- Game states
+- Objects
+- Actions
+- Win condition
+- Death condition
+- Camera behavior
+- UI elements
+
+
+PHASE 1 — BASIC PYTHON AI PROJECT
+---------------------------------
+Create the project structure:
+
+dead-as-disco-ai/
+|
++-- app/
+|   +-- main.py
+|   +-- config.py
+|   +-- logger.py
+|
++-- capture/
+|   +-- screen_capture.py
+|   +-- frame_buffer.py
+|
++-- vision/
+|   +-- detector.py
+|   +-- player_detector.py
+|   +-- obstacle_detector.py
+|
++-- game/
+|   +-- game_state.py
+|   +-- actions.py
+|   +-- controller.py
+|
++-- ai/
+|   +-- decision_engine.py
+|   +-- policy.py
+|
++-- music/
+|   +-- analyzer.py
+|   +-- beat_detector.py
+|   +-- bpm.py
+|
++-- ui/
++-- models/
++-- recordings/
++-- tests/
++-- requirements.txt
++-- README.md
+
+Initial technologies:
+- Python 3.10/3.11
+- OpenCV
+- NumPy
+- PyTorch
+- MSS
+- PyDirectInput
+- FFmpeg
+- librosa
+- Later: YOLO, ONNX, PySide6
+
+
+PHASE 2 — SCREEN CAPTURE
+------------------------
+Make the computer see the game.
+
+Pipeline:
+Game -> Screen -> MSS -> Frame -> OpenCV
+
+Tasks:
+- Capture the game window.
+- Display the live captured frame.
+- Measure capture FPS.
+- Save sample frames.
+
+Target:
+Ideally 60 FPS capture if the game and hardware allow it.
+
+Deliverable:
+A working live game-capture module.
+
+
+PHASE 3 — GAME VISION
+---------------------
+Teach the AI what is visible.
+
+Initially use simple computer vision where practical.
+
+Detect:
+- Player
+- Enemy
+- Platform
+- Obstacle
+- Projectile
+- Goal
+- Death screen
+- Menu
+
+Convert visual information into:
+- Player position
+- Enemy positions
+- Obstacle positions
+- Game status
+
+Deliverable:
+A GameState representation generated from each frame.
+
+
+PHASE 4 — OBJECT DETECTION AI
+-----------------------------
+If traditional OpenCV is not reliable enough, train an object detector.
+
+Dataset labels:
+- player
+- enemy
+- platform
+- obstacle
+- weapon
+- goal
+- death_screen
+
+Training pipeline:
+Screenshots -> Labeling -> Dataset -> YOLO training -> best.pt
+-> Real-time detection
+
+Target:
+30+ FPS detection where practical.
+
+Use the RTX 4050 GPU for training/inference where beneficial.
+
+
+PHASE 5 — GAME STATE ENGINE
+---------------------------
+Convert detections into meaningful gameplay state.
+
+Example state:
+- Player x/y
+- Player velocity
+- Enemy x/y
+- Obstacles
+- Distance to danger
+- Current action
+- Score
+- Health
+- Alive/dead
+- Current game state
+
+Create:
+GameState
+
+Possible structure:
+- player
+- enemies
+- obstacles
+- environment
+- velocity
+- danger_level
+- current_action
+- score
+- health
+- game_status
+
+
+PHASE 6 — INPUT CONTROLLER
+--------------------------
+Make the computer control the game.
+
+Possible actions depending on the actual game:
+- LEFT
+- RIGHT
+- UP
+- DOWN
+- JUMP
+- ATTACK
+- DODGE
+- SPECIAL
+- NONE
+
+Create:
+controller.py
+
+IMPORTANT SAFETY FEATURE:
+F8 = EMERGENCY STOP
+
+Pressing F8 must immediately release/stop all AI-controlled inputs.
+
+
+PHASE 7 — FIRST NON-AI BOT
+--------------------------
+Do not train a neural network yet.
+
+Build a rule-based bot.
+
+Example logic:
+- If obstacle is close -> dodge.
+- If enemy is close -> attack.
+- If player is falling -> jump.
+- If path is clear -> move forward.
+
+Purpose:
+Prove the full pipeline:
+Computer sees -> understands -> decides -> controls -> survives.
+
+Deliverable:
+A basic autonomous bot.
+
+
+PHASE 8 — AUTONOMOUS GAMEPLAY V1
+--------------------------------
+Connect the complete loop:
+
+Capture
+  -> Detection
+  -> GameState
+  -> Decision Engine
+  -> Action
+  -> Keyboard
+  -> Game
+
+Milestones:
+- AI plays for 1 minute without human input.
+- Then 5 minutes.
+- Then 10 minutes.
+- Then attempt to complete a level.
+
+This is the first major project milestone.
+
+
+PHASE 9 — RECORDING AND REPLAY SYSTEM
+-------------------------------------
+Record gameplay data for future AI training.
+
+Store:
+- Frame
+- Timestamp
+- GameState
+- Action
+- Result
+
+Example:
+12.120s -> RIGHT
+12.180s -> RIGHT
+12.240s -> JUMP
+12.300s -> ATTACK
+
+Use recordings for debugging, replay, dataset creation,
+and later machine learning.
+
+
+PHASE 10 — MUSIC ANALYZER
+-------------------------
+Add the user's own music.
+
+Supported inputs can include:
+- MP3
+- WAV
+- FLAC
+
+Analyze:
+- BPM
+- Beat
+- Tempo
+- Energy
+- Volume
+- Onset
+- Song sections
+
+Possible tools:
+- librosa
+- FFmpeg
+- NumPy
+
+Create:
+MusicState
+
+Example:
+- BPM = 128
+- Beat interval = approximately 0.468 sec
+- Energy = 0.82
+- Drop = 01:24
+
+
+PHASE 11 — MUSIC-SYNCHRONIZED GAMEPLAY
+--------------------------------------
+Synchronize selected actions with music beats.
+
+Pipeline:
+Beat detected
+  -> AI checks game state
+  -> Is an action safe?
+  -> Yes: synchronize action
+  -> No: prioritize survival
+
+IMPORTANT:
+Game safety always has higher priority than music synchronization.
+
+The AI should never intentionally sacrifice gameplay just to hit a beat.
+
+
+PHASE 12 — AI DECISION ENGINE V2
+--------------------------------
+Replace basic rules with a learned policy.
+
+Possible inputs:
+- Player position
+- Player velocity
+- Enemy positions
+- Obstacle positions
+- Distances
+- Health
+- Game state
+- Music BPM
+- Music energy
+
+Possible outputs:
+- LEFT
+- RIGHT
+- JUMP
+- ATTACK
+- DODGE
+- WAIT
+
+Architecture:
+Game State
+  -> Feature Encoder
+  -> Neural Network / Policy
+  -> Action
+
+
+PHASE 13 — REINFORCEMENT LEARNING
+---------------------------------
+Teach the AI to improve by experience.
+
+Environment:
+Observation -> AI -> Action -> Game -> Reward -> Learning
+
+Example rewards:
+- Survive: +1
+- Enemy killed: +5
+- Progress: +2
+- Good dodge: +3
+- Damage: -5
+- Death: -20
+- Level complete: +100
+
+Possible algorithms:
+- PPO
+- DQN
+- SAC
+
+For a discrete action game, evaluate PPO vs DQN based on the
+actual state/action design.
+
+Goal:
+The AI should learn gameplay rather than relying only on hard-coded rules.
+
+
+PHASE 14 — TRAINING ENVIRONMENT
+------------------------------
+Create a training interface similar to a reinforcement-learning environment.
+
+Create:
+DeadAsDiscoEnv
+
+Conceptual API:
+- reset()
+- step(action)
+- reward()
+- done()
+
+Challenge:
+Training directly against the real game can be slow.
+
+Use recorded gameplay, controlled experiments, and optimized
+environment interaction wherever practical.
+
+
+PHASE 15 — HUMAN GAMEPLAY DATASET
+---------------------------------
+Allow the user to play normally while the software records:
+
+- Screen
+- Human action
+- Game state
+- Timestamp
+- Music position
+
+Create a human gameplay dataset.
+
+Use:
+Human examples
+  -> Behavior cloning
+  -> AI learns basic gameplay
+  -> Reinforcement learning
+  -> AI improves itself
+
+This is likely more practical than starting reinforcement learning
+completely from zero.
+
+
+PHASE 16 — HYBRID AI
+---------------------
+The final AI should combine multiple systems.
+
+VISION AI:
+"What is happening?"
+
+PREDICTION AI:
+"What is likely to happen next?"
+
+DECISION AI:
+"What should I do?"
+
+MUSIC AI:
+"When would an action look good?"
+
+SAFETY SYSTEM:
+"Don't do something dangerous."
+
+Architecture:
+Vision + Policy + Music
+        -> Safety Layer
+        -> Action Selector
+        -> Game
+
+
+PHASE 17 — DESKTOP APPLICATION
+------------------------------
+Turn the project into real standalone software.
+
+Recommended UI framework:
+PySide6
+
+Main dashboard should show:
+- Game preview
+- AI status
+- Model name
+- FPS
+- Confidence
+- Score
+- Survival time
+- Current song
+- BPM
+- Start button
+- Pause button
+- Stop button
+
+Example:
+DEAD AS DISCO — AI PLAYER
+
+AI STATUS: PLAYING
+Model: Hybrid-v1
+FPS: 58
+Confidence: 94%
+Score: 12,540
+Survival: 04:32
+Song: My Song.mp3
+BPM: 128
+
+[ START AI ] [ PAUSE ] [ STOP ]
+
+
+PHASE 18 — AI SETTINGS
+----------------------
+Gameplay settings:
+- AI difficulty
+- Aggression
+- Risk tolerance
+- Reaction speed
+
+Music settings:
+- Enable music sync
+- Beat sensitivity
+- Energy response
+
+Vision settings:
+- Detection FPS
+- Confidence threshold
+- Resolution
+
+Safety settings:
+- Maximum runtime
+- Emergency hotkey
+- Maximum actions per second
+
+
+PHASE 19 — AUTOMATIC GAME LAUNCH
+--------------------------------
+Final workflow:
+
+START AI
+  -> Launch game
+  -> Wait for game
+  -> Detect game window
+  -> Detect main menu
+  -> Start gameplay
+  -> AI begins
+
+Goal:
+The user should not need to manually configure the game every time.
+
+
+PHASE 20 — CRASH RECOVERY
+-------------------------
+Handle real-world failures.
+
+Possible failures:
+- Game crashes
+- AI crashes
+- Detection stops
+- FPS drops
+- Window disappears
+
+Recovery:
+STOP INPUT
+  -> Recover
+  -> Restart/reconnect
+  -> Resume when safe
+
+Logging:
+logs/
++-- ai.log
++-- vision.log
++-- controller.log
++-- music.log
++-- crash.log
+
+
+PHASE 21 — PERFORMANCE OPTIMIZATION
+-----------------------------------
+Potential targets:
+- Game FPS: 90+
+- AI processing: 30-60 FPS
+- Input latency: under 50 ms where practical
+- Reasonable CPU usage
+- Optimized GPU usage
+
+Optimization techniques:
+- ONNX inference where beneficial
+- TorchScript/optimized PyTorch where beneficial
+- Frame skipping
+- Region-of-interest detection
+- GPU inference
+- Threading
+- Async pipelines
+- Lower-resolution detection with higher-resolution game capture
+
+
+PHASE 22 — COMPLETE TESTING
+---------------------------
+Vision tests:
+- Player detection
+- Enemy detection
+- Obstacle detection
+- Death detection
+
+Controller tests:
+- LEFT
+- RIGHT
+- JUMP
+- ATTACK
+- STOP
+- Emergency stop
+
+AI tests:
+- Decision correctness
+- Danger handling
+- Recovery
+- State transitions
+
+Music tests:
+- BPM detection
+- Beat detection
+- Energy detection
+- Song switching
+- Synchronization
+
+Full-system tests:
+Launch -> Play -> Music -> AI -> Death -> Restart -> Play again
+
+
+PHASE 23 — FINAL SOFTWARE ARCHITECTURE
+--------------------------------------
+DeadAsDiscoAI/
+|
++-- app/
+|   +-- main.py
+|   +-- config.py
+|   +-- lifecycle.py
+|
++-- core/
+|   +-- game_state.py
+|   +-- event_bus.py
+|   +-- scheduler.py
+|
++-- capture/
+|   +-- screen.py
+|   +-- recorder.py
+|
++-- vision/
+|   +-- detector.py
+|   +-- tracker.py
+|   +-- state_estimator.py
+|
++-- ai/
+|   +-- policy.py
+|   +-- decision_engine.py
+|   +-- predictor.py
+|   +-- safety.py
+|   +-- rl/
+|
++-- controller/
+|   +-- keyboard.py
+|   +-- input_manager.py
+|
++-- music/
+|   +-- analyzer.py
+|   +-- beat.py
+|   +-- bpm.py
+|   +-- synchronizer.py
+|
++-- training/
+|   +-- dataset.py
+|   +-- behavior_cloning.py
+|   +-- environment.py
+|   +-- train.py
+|
++-- models/
+|   +-- detector/
+|   +-- policy/
+|
++-- ui/
+|   +-- dashboard.py
+|   +-- settings.py
+|   +-- player.py
+|
++-- data/
+|   +-- recordings/
+|   +-- datasets/
+|   +-- replays/
+|
++-- tests/
++-- logs/
++-- requirements.txt
++-- README.md
++-- build.spec
+
+
+RECOMMENDED DEVELOPMENT ORDER
+-----------------------------
+01. Analyze the game
+02. Screen capture
+03. Player detection
+04. Game-state detection
+05. Keyboard controller
+06. Rule-based bot
+07. Autonomous playable bot
+08. Recording/replay
+09. Music analyzer
+10. Music synchronization
+11. Human gameplay dataset
+12. Behavior cloning
+13. Reinforcement learning
+14. Hybrid AI
+15. PySide6 desktop UI
+16. Auto-launch/recovery
+17. Optimization
+18. Packaging
+
+
+MAJOR MILESTONES
+----------------
+MILESTONE 1:
+Computer can reliably capture the game screen.
+
+MILESTONE 2:
+AI can detect the player and important game objects.
+
+MILESTONE 3:
+AI can send reliable game controls.
+
+MILESTONE 4:
+Rule-based AI can play without human input.
+
+MILESTONE 5:
+AI can survive and complete meaningful gameplay.
+
+MILESTONE 6:
+Music analyzer can detect BPM and beats.
+
+MILESTONE 7:
+Gameplay can react/synchronize with music.
+
+MILESTONE 8:
+AI learns from human gameplay.
+
+MILESTONE 9:
+Reinforcement learning improves the policy.
+
+MILESTONE 10:
+Hybrid AI combines vision, prediction, decision, music, and safety.
+
+MILESTONE 11:
+Desktop application provides one-click AI gameplay.
+
+MILESTONE 12:
+Packaged, tested, recoverable final software.
+
+
+FINAL USER EXPERIENCE
+---------------------
+User:
+1. Opens Dead As Disco AI.
+2. Selects a song/playlist.
+3. Presses START AI.
+4. Software launches/detects the game.
+5. AI observes the game.
+6. AI makes gameplay decisions.
+7. AI controls the game.
+8. Music analyzer influences safe, stylish actions.
+9. AI handles death/restart when supported.
+10. User watches the AI play.
+
+Final loop:
+
+User Music
+    |
+    v
+Music Analyzer
+    |
+    v
++-----------------------+
+|      AI PLAYER        |
+|                       |
+| Vision                |
+|   -> Game State       |
+|   -> Prediction       |
+|   -> Decision         |
+|   -> Music Timing     |
+|   -> Safety           |
+|   -> Controller       |
++-----------+-----------+
+            |
+            v
+      DEAD AS DISCO
+            |
+            v
+       Screen Capture
+            |
+            +-----> AI PLAYER
+
+
+FIRST REAL SUCCESS TARGET
+-------------------------
+The most important early milestone is:
+
+"I press START, leave the keyboard alone, and the AI successfully
+plays Dead as Disco."
+
+Once that works, everything else makes the system smarter,
+more entertaining, more musical, and more autonomous.
+
+HARDWARE NOTE
+-------------
+The project can be developed on a laptop with an RTX 4050 6GB.
+The GPU is useful for object detection, model training, and
+accelerated inference. Start with lightweight models and optimize
+only after the basic playable pipeline works.
+
+IMPORTANT DEVELOPMENT PRINCIPLE
+--------------------------------
+Do NOT build all phases simultaneously.
+
+Build and verify one layer at a time:
+
+SEE
+ -> UNDERSTAND
+ -> CONTROL
+ -> PLAY
+ -> RECORD
+ -> LISTEN TO MUSIC
+ -> LEARN
+ -> IMPROVE
+ -> UI
+ -> PACKAGE
+
+The first practical version should be a simple, reliable,
+rule-based autonomous player. Machine learning and reinforcement
+learning should be added after the basic game-control pipeline is
+proven.

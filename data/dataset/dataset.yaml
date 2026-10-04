@@ -1,0 +1,11 @@
+path: .
+train: images/train
+val: images/val
+test: images/test
+names:
+  0: player
+  1: enemy
+  2: stunned_enemy
+  3: airborne_enemy
+  4: action_prompt
+  5: takedown_indicator
