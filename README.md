@@ -35,6 +35,16 @@ reviewed. See
 [Dead_As_Disco_AI_Complete_Roadmap.txt](Dead_As_Disco_AI_Complete_Roadmap.txt)
 for the project roadmap.
 
+## Phase 4D: independent validation/test capture
+
+Independent validation and test gameplay captures go to
+`data/dataset_independent_eval`, separate from both existing datasets.
+Validation-purpose sessions are fixed to `images/val`; test-purpose sessions
+are fixed to `images/test`; this capture workflow has no training-split option.
+Each session records a manifest, per-frame metadata, and no labels. See
+[docs/PHASE_4D_CAPTURE.md](docs/PHASE_4D_CAPTURE.md) for safe recording
+instructions and the exact validation/test commands.
+
 ## Requirements
 
 - Windows

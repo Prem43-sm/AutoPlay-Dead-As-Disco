@@ -1,0 +1,22 @@
+{
+  "session_id": "validation_YYYYMMDD_01",
+  "purpose": "validation",
+  "source": "live_screen_capture",
+  "source_video": null,
+  "split": "val",
+  "source_resolution": {
+    "width": 1536,
+    "height": 864
+  },
+  "capture_fps": {
+    "configured_max": 30,
+    "measured_average": null
+  },
+  "capture_interval_seconds": 0.5,
+  "frame_count": 0,
+  "timestamp": "UTC ISO-8601",
+  "started_at": "UTC ISO-8601",
+  "ended_at": "UTC ISO-8601",
+  "notes": "",
+  "labels_generated": false
+}

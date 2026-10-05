@@ -7,6 +7,11 @@ import cv2
 from app.config import CaptureConfig, CaptureRegion
 from app.logger import get_logger
 from capture.screen_capture import run_live_capture
+from data.independent_capture import (
+    DEFAULT_ROOT as DEFAULT_INDEPENDENT_DATA_ROOT,
+    IndependentCaptureConfig,
+    record_independent_session,
+)
 from data.dataset_tools import (
     DatasetCaptureConfig,
     VideoDatasetCaptureConfig,
@@ -128,6 +133,30 @@ def _parse_args() -> argparse.Namespace:
         help="Record a bounded, read-only gameplay dataset session.",
     )
     parser.add_argument(
+        "--independent-capture",
+        choices=("validation", "test"),
+        metavar="PURPOSE",
+        help=(
+            "Capture a read-only independent validation or test session into "
+            "data/independent_eval; this cannot target the training dataset."
+        ),
+    )
+    parser.add_argument(
+        "--independent-session-id",
+        help="Required unique ID for --independent-capture.",
+    )
+    parser.add_argument(
+        "--session-notes",
+        default="",
+        help="Optional notes stored in the independent session manifest.",
+    )
+    parser.add_argument(
+        "--capture-duration",
+        type=float,
+        default=900.0,
+        help="Maximum independent capture duration in seconds (default: 900).",
+    )
+    parser.add_argument(
         "--video-dataset-capture",
         type=Path,
         metavar="VIDEO",
@@ -229,6 +258,7 @@ def main() -> None:
     dataset_operations = (
         args.dataset_init is not None,
         args.dataset_capture,
+        args.independent_capture is not None,
         args.video_dataset_capture is not None,
         args.dataset_validate is not None,
         args.dataset_preview is not None,
@@ -313,6 +343,48 @@ def main() -> None:
             "manifest_path": report.manifest_path.as_posix(),
             "session_metadata_path": report.session_metadata_path.as_posix(),
         }, indent=2))
+        return
+
+    if args.independent_capture is not None:
+        if not args.independent_session_id:
+            raise SystemExit(
+                "--independent-session-id is required with --independent-capture."
+            )
+        independent_config = IndependentCaptureConfig(
+            capture=CaptureConfig(
+                monitor_index=args.monitor,
+                max_fps=args.fps,
+                region=args.region,
+            ),
+            purpose=args.independent_capture,
+            session_id=args.independent_session_id,
+            sample_interval_seconds=args.sample_interval,
+            max_duration_seconds=args.capture_duration,
+            notes=args.session_notes,
+            output_root=DEFAULT_INDEPENDENT_DATA_ROOT,
+        )
+        report = record_independent_session(
+            independent_config,
+            show_preview=not args.no_preview,
+        )
+        print(
+            json.dumps(
+                {
+                    "session_id": report.session_id,
+                    "purpose": report.purpose,
+                    "split": report.split,
+                    "frame_count": report.frame_count,
+                    "frame_resolution": report.frame_resolution,
+                    "configured_capture_fps": report.configured_capture_fps,
+                    "measured_capture_fps": report.measured_capture_fps,
+                    "capture_interval_seconds": report.capture_interval_seconds,
+                    "session_manifest": report.session_manifest.as_posix(),
+                    "session_metadata": report.session_metadata.as_posix(),
+                    "labels_generated": False,
+                },
+                indent=2,
+            )
+        )
         return
 
     if args.video_dataset_capture is not None:

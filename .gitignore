@@ -35,3 +35,21 @@ data/raw/*
 !data/raw/.gitkeep
 data/sessions/*
 !data/sessions/.gitkeep
+
+# Independent evaluation captures are local-only; keep the empty structure.
+data/dataset_independent_eval/images/train/*
+!data/dataset_independent_eval/images/train/.gitkeep
+data/dataset_independent_eval/images/val/*
+!data/dataset_independent_eval/images/val/.gitkeep
+data/dataset_independent_eval/images/test/*
+!data/dataset_independent_eval/images/test/.gitkeep
+data/dataset_independent_eval/labels/train/*
+!data/dataset_independent_eval/labels/train/.gitkeep
+data/dataset_independent_eval/labels/val/*
+!data/dataset_independent_eval/labels/val/.gitkeep
+data/dataset_independent_eval/labels/test/*
+!data/dataset_independent_eval/labels/test/.gitkeep
+data/dataset_independent_eval/metadata/*
+!data/dataset_independent_eval/metadata/.gitkeep
+!data/dataset_independent_eval/metadata/session_manifest.example.json
+data/dataset_independent_eval/metadata/*/
