@@ -4,7 +4,9 @@ This is an initial investigation record, not a complete verified gameplay
 specification. The controls below were reported by the user or supplied in a
 user-provided functional design; they have not been independently
 cross-checked. See [GAMEPLAY_ACTION_SPEC.md](GAMEPLAY_ACTION_SPEC.md) for the
-full combat/action behavior and safety requirements.
+full combat/action behavior and safety requirements, and
+[docs/VISUAL_DETECTION_SPEC.md](docs/VISUAL_DETECTION_SPEC.md) for the
+evidence-based visual detection and game-state proposal.
 
 ## Installation inspected
 
@@ -112,9 +114,14 @@ Collect varied, manually reviewable sessions that include:
 - Clear positive and negative examples for action prompts and the takedown
   indicator. Do not press inputs to manufacture examples.
 
-### Initial candidate object classes
+### Existing legacy YOLO label classes
 
-The manually labeled YOLO classes are exactly:
+These are the current fixed IDs in `dataset.yaml`, not the recommended final
+detector classes. The proposed final list and HUD/state methods are specified
+in [docs/VISUAL_DETECTION_SPEC.md](docs/VISUAL_DETECTION_SPEC.md). Do not
+renumber or rewrite existing labels as part of this specification.
+
+The current legacy YOLO classes are:
 
 | ID | Class |
 | ---: | --- |
@@ -152,17 +159,19 @@ label file is a reviewed negative.
   opportunities were evaluated and 4 near-duplicates were skipped. The whole
   video session is assigned to `train`.
 - Current dataset total: **428 images** (train **428**, validation **0**, test
-  **0**). All **428** images are unlabeled and none have generated labels.
-- Current manually verified object counts: **0** for each class (`player`,
-  `enemy`, `stunned_enemy`, `airborne_enemy`, `action_prompt`, and
-  `takedown_indicator`). There are **0** multi-class labeled images, **0**
-  reviewed empty images, **0** exact duplicate images, **0** invalid labels,
-  and no reported session split leakage. Dataset validation completed with no
-  errors; missing-label warnings are expected until manual review.
+  **0**). There are **43** existing label files/reviewed frames and one
+  skipped frame; 384 images remain unreviewed. These are not sufficient for
+  model training.
+- Dataset validation reports **11 out-of-bounds boxes**, **0** exact or
+  near-duplicate pairs, and no session split leakage. The label files were
+  deliberately left unchanged; review the invalid boxes before any training.
+- Current validated box counts are: player 39, enemy 64, stunned_enemy 8,
+  airborne_enemy 0, action_prompt 10, takedown_indicator 7. Missing labels are
+  not negative examples.
 - Existing `recordings/validation/live_capture.png` is one real gameplay
   sample used for vision verification; it is outside the training dataset and
   has no manual labels.
-- Both dataset sessions require manual inspection and labeling. The video
-  frame set is ready for labeling, not model training; validation/test
-  sessions and manually verified labels are still required before a training
-  readiness decision.
+- Both dataset sessions need further review, but pause new annotation until
+  the proposed visual-state taxonomy is approved. The video frame set is
+  useful for curation, not model training; independent validation/test
+  sessions and reviewed label fixes remain required.

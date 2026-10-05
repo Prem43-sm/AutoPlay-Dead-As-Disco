@@ -1,5 +1,13 @@
 # Dataset labeling guide
 
+> **Labeling pause:** This guide and `dataset.yaml` describe the existing
+> six-class legacy schema. The proposed two-class destination and the
+> reviewer-approved migration workflow are documented in
+> [../../docs/DATASET_TAXONOMY_MIGRATION.md](../../docs/DATASET_TAXONOMY_MIGRATION.md).
+> No labels have been migrated. Do not add, relabel, renumber, or delete legacy
+> labels as part of that workflow; existing images and labels must remain
+> untouched.
+
 ## Classes
 
 Class IDs are fixed by `dataset.yaml`:

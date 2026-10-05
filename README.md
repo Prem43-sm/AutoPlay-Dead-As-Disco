@@ -12,8 +12,10 @@ validation, and manual-labeling workflow.
 - Phase 2: screen capture verified against the game
 - Phase 3: preliminary read-only vision (not reliable for full gameplay)
 - Phase 4A: dataset tooling
-- Phase 4B: real data collection and manual labeling not complete
-- Dataset: **0 collected images, 0 manually labeled images**
+- Phase 4B: data collection complete; dataset review/labeling is partial
+- Phase 4C.1: visual detection and game-state specification
+- Phase 4C.2: isolated two-class schema and approval-gated migration prepared
+- Dataset: **428 images; 43 labeled/reviewed; 11 invalid boxes**
 - Training readiness: **NOT READY**
 
 No keyboard, mouse, or controller input, autonomous gameplay, reinforcement
@@ -21,6 +23,15 @@ learning, or trained YOLO model is included. Do not treat heuristic vision
 output as ground truth. See [GAME_SPEC.md](GAME_SPEC.md) for verified
 observations and known limitations, [GAMEPLAY_ACTION_SPEC.md](GAMEPLAY_ACTION_SPEC.md)
 for proposed future behavior (not implemented), and
+[docs/VISUAL_DETECTION_SPEC.md](docs/VISUAL_DETECTION_SPEC.md) for the proposed
+final detector/state schema and data requirements. The existing six-class
+dataset remains unchanged; the two-class v2 destination is isolated and empty,
+with no labels or images copied.
+See [docs/DATASET_TAXONOMY_MIGRATION.md](docs/DATASET_TAXONOMY_MIGRATION.md)
+for the invalid-box audit and explicit reviewer-approved migration workflow.
+Dataset validation currently reports 11 out-of-bounds boxes; do not train or
+resume labeling until the taxonomy is approved and the existing errors are
+reviewed. See
 [Dead_As_Disco_AI_Complete_Roadmap.txt](Dead_As_Disco_AI_Complete_Roadmap.txt)
 for the project roadmap.
 
